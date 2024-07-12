@@ -313,6 +313,7 @@ void WebServer::dealwithwrite(int sockfd){
         if(timer){
             adjust_timer(timer);
         }
+        //若监测到写事件，将该事件放入请求队列
         m_pool->append(users + sockfd, 1);
         while(true){
             if (1 == users[sockfd].improv){

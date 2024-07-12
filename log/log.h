@@ -13,9 +13,12 @@ using namespace std;
 
 class Log{
 public:
-    //C++11以后,使用局部变量饿汉不用加锁
+    // static pthread_mutex_t lock;
+    //C++11以后,使用局部变量懒汉不用加锁
     static Log *get_instance(){
+         // pthread_mutex_lock(&lock);
         static Log instance;
+        // pthread_mutex_unlock(&lock);
         return &instance;
     }
     static void *flush_log_thread(void *args){

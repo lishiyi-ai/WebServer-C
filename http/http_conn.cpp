@@ -259,8 +259,10 @@ http_conn::HTTP_CODE http_conn::parse_request_line(char *text){
 }
 // 解析http请求的一个头部信息
 http_conn::HTTP_CODE http_conn::parse_headers(char *text){
+    // 判断是空行还是请求头
     if (text[0] == '\0')
     {
+        //判断是GET还是POST请求
         if (m_content_length != 0)
         {
             m_check_state = CHECK_STATE_CONTENT;
@@ -306,7 +308,7 @@ http_conn::HTTP_CODE http_conn::process_read(){
     LINE_STATUS line_status = LINE_OK;
     HTTP_CODE ret = NO_REQUEST;
     char *text = 0;
-
+    // 并在完成消息体解析后，将line_status变量更改为LINE_OPEN，此时可以跳出循环
     while ((m_check_state == CHECK_STATE_CONTENT 
     && line_status == LINE_OK) 
     || ((line_status = parse_line()) == LINE_OK)){
@@ -442,15 +444,17 @@ http_conn::HTTP_CODE http_conn::do_request(){
         free(m_url_real);
     }else
         strncpy(m_real_file + len, m_url, FILENAME_LEN - len - 1);
-    // 获取文件信息
+    // 通过stat获取请求资源文件信息，成功则将信息更新到m_file_stat结构体
+    // 失败返回NO_RESOURCE状态，表示资源不存在
     if (stat(m_real_file, &m_file_stat) < 0)
         return NO_RESOURCE;
     // 非其他用户具可读权限则禁止
     if (!(m_file_stat.st_mode & S_IROTH))
         return FORBIDDEN_REQUEST;
-    // 是否为目录
+    // 判断文件类型，如果是目录，则返回BAD_REQUEST，表示请求报文有误
     if (S_ISDIR(m_file_stat.st_mode))
         return BAD_REQUEST;
+    // 以只读方式获取文件描述符，通过mmap将该文件映射到内存中
     int fd = open(m_real_file, O_RDONLY);
     // mmap是一种内存映射文件的方法，即将一个文件或者其它对象映射到进程的地址空间，
     // 实现文件磁盘地址和进程虚拟地址空间中一段虚拟地址的一一对映关系。
@@ -482,6 +486,7 @@ bool http_conn::write(){
         tmp = writev(m_sockfd, m_iv, m_iv_count);
 
         if (tmp < 0){
+            //判断缓冲区是否满了
             if (errno == EAGAIN){
                 modfd(m_epollfd, m_sockfd, EPOLLOUT, m_TRIGMode);
                 return true;
@@ -522,15 +527,20 @@ bool http_conn::write(){
 bool http_conn::add_response(const char *format, ...){
     if (m_write_idx >= WRITE_BUFFER_SIZE)
         return false;
+    //定义可变参数列表
     va_list arg_list;
+    //将变量arg_list初始化为传入参数
     va_start(arg_list, format);
+    //将数据format从可变参数列表写入缓冲区写，返回写入数据的长度
     int len = vsnprintf(m_write_buf + m_write_idx, 
     WRITE_BUFFER_SIZE - 1 - m_write_idx, format, arg_list);
+    //如果写入的数据长度超过缓冲区剩余空间，则报错
     if(len >= (WRITE_BUFFER_SIZE - 1 - m_write_idx)){
         va_end(arg_list);
         return false;
     }
     m_write_idx += len;
+    //清空可变参列表
     va_end(arg_list);
 
     LOG_INFO("request:%s", m_write_buf);
@@ -589,8 +599,10 @@ bool http_conn::process_write(HTTP_CODE ret){
             add_status_line(200, ok_200_title);
             if (m_file_stat.st_size != 0){
                 add_headers(m_file_stat.st_size);
+                //第一个iovec指针指向响应报文缓冲区，长度指向m_write_idx
                 m_iv[0].iov_base = m_write_buf;
                 m_iv[0].iov_len = m_write_idx;
+                //第二个iovec指针指向mmap返回的文件指针，长度指向文件大小
                 m_iv[1].iov_base = m_file_address;
                 m_iv[1].iov_len = m_file_stat.st_size;
                 m_iv_count = 2;
@@ -606,6 +618,7 @@ bool http_conn::process_write(HTTP_CODE ret){
         default:
             return false;
     }
+    //除FILE_REQUEST状态外，其余状态只申请一个iovec，指向响应报文缓冲区
     m_iv[0].iov_base = m_write_buf;
     m_iv[0].iov_len = m_write_idx;
     m_iv_count = 1;
@@ -614,10 +627,12 @@ bool http_conn::process_write(HTTP_CODE ret){
 }
 void http_conn::process(){
     HTTP_CODE read_ret = process_read();
+    //NO_REQUEST，表示请求不完整，需要继续接收请求数据
     if(read_ret == NO_REQUEST){
         modfd(m_epollfd, m_sockfd, EPOLLIN, m_TRIGMode);
         return;
     }
+    //调用process_write完成报文响应
     bool write_ret = process_write(read_ret);
     if (!write_ret)
     {
