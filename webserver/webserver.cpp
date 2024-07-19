@@ -151,7 +151,7 @@ void WebServer::eventListen(){
     utils.addfd(m_epollfd, m_pipefd[0], false, 0);
 
     //传递给主循环的信号值，这里只关注SIGALRM和SIGTERM
-    utils.addsig(SIGPIPE, SIG_IGN);
+    utils.addsig(SIGPIPE, utils.sig_handler, false);
     utils.addsig(SIGALRM, utils.sig_handler, false);
     utils.addsig(SIGTERM, utils.sig_handler, false);
     alarm(TIMESLOT);
@@ -217,8 +217,6 @@ bool WebServer::dealclientdata(){
             return false;
         }
         timer(connfd, client_address);
-
-        
     }else{ // ET
         while (1)
         {
@@ -259,6 +257,10 @@ bool WebServer::dealwithsignal(bool &timeout, bool &stop_server){
                 }
                 case SIGTERM:{
                     stop_server = true;
+                    break;
+                }
+                case SIGPIPE: {
+                    LOG_INFO("%s", "SIGPIPE");
                     break;
                 }
             }
@@ -318,7 +320,6 @@ void WebServer::dealwithwrite(int sockfd){
         while(true){
             if (1 == users[sockfd].improv){
                 if (1 == users[sockfd].timer_flag){
-                    
                     deal_timer(timer, sockfd);
                     users[sockfd].timer_flag = 0;
                 }
@@ -355,7 +356,6 @@ void WebServer::eventLoop(){
         }
         for(int i = 0; i < number; ++i){
             int sockfd = events[i].data.fd;
-            
             //处理新到的客户连接
             if(sockfd == m_listenfd){
                 bool flag = dealclientdata();

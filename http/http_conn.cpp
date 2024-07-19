@@ -350,7 +350,6 @@ http_conn::HTTP_CODE http_conn::do_request(){
     strcpy(m_real_file, doc_root);
     int len = strlen(doc_root);
     const char *p = strchr(m_url, '/');
-    cout << p << endl;
     // 处理cgi
     if(cgi == 1 && (*(p + 1) == '2'|| *(p + 1) == '3')){
         // 根据标志判断是登陆检测还是注册检测

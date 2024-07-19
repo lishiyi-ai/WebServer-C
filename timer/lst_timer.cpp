@@ -16,6 +16,7 @@ sort_timer_lst::~sort_timer_lst(){
 }
 
 void sort_timer_lst::add_timer(util_timer *timer){
+    cout << "1" << endl;
     if(!timer){
         return;
     }
@@ -176,6 +177,7 @@ bool restart){
     memset(&sa, '\0', sizeof(sa));
     //信号处理函数中仅仅发送信号值，不做对应逻辑处理
     sa.sa_handler = handler;
+    // SA_RESTART：如果信号中断了进程的某个系统调用，则系统自动启动该系统调用三
     if(restart)
         sa.sa_flags |= SA_RESTART;
     // sigfillset()函数用于初始化一个自定义信号集，将其所有信号都填充满，
@@ -201,8 +203,7 @@ int Utils::u_epollfd = 0;
 
 class Utils;
 void cb_func(client_data *user_data){
-    epoll_ctl(Utils::u_epollfd, 
-    EPOLL_CTL_DEL, user_data->sockfd, 0);
+    epoll_ctl(Utils::u_epollfd, EPOLL_CTL_DEL, user_data->sockfd, 0);
     assert(user_data->sockfd);
     close(user_data->sockfd);
     http_conn::m_user_count--;
