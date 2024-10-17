@@ -18,7 +18,7 @@ public:
     bool ReleaseConnection(MYSQL *conn); // 释放连接
     int GetFreeConn(); // 获取空闲连接
     void DestroyPool(); // 销毁所有连接
-
+    bool reset(MYSQL *con);
     // 单例模式 饿汉模式
     static connection_pool *GetInstance(); 
 

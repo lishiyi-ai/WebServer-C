@@ -104,6 +104,8 @@ private:
     bool add_content_length(int content_length);
     bool add_linger();
     bool add_blank_line();
+    // 允许跨域访问
+    bool add_cors_allow();
 
 public:
     // epoll文件描述符
@@ -127,6 +129,8 @@ private:
     char *m_url;
     char *m_version;
     char *m_host;
+    char *m_data;
+    size_t m_data_len;
     long m_content_length;
     bool m_linger;
     char *m_file_address;

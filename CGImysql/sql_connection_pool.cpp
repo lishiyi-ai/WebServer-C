@@ -38,6 +38,9 @@ void connection_pool::init(string url, string User, string Password,
             LOG_ERROR("MySql Error");
             exit(1);
         }
+        // 修改
+        // char value = 1;
+        // mysql_options(con, MYSQL_OPT_RECONNECT, (char *)value);
         // mysql_real_connect()
         con = mysql_real_connect(con, m_url.c_str(), m_User.c_str(), 
                         m_Password.c_str(), m_DataBaseName.c_str(), 
@@ -107,11 +110,28 @@ int connection_pool::GetFreeConn(){
 connection_pool::~connection_pool(){
 	DestroyPool();
 }
+bool connection_pool::reset(MYSQL *con){
+    con = mysql_real_connect(con, m_url.c_str(), m_User.c_str(), 
+                    m_Password.c_str(), m_DataBaseName.c_str(), 
+                    m_Port, NULL, 0);
+
+    if(con == NULL){
+        LOG_ERROR("MySql Error");
+        exit(1);
+    }
+    return true;
+}
 // RAII实现
 connectionRAII::connectionRAII(MYSQL **SQL, connection_pool *connPool){
     *SQL = connPool->GetConnection();
     conRAII = *SQL;
-    poolRAII = connPool;              
+    poolRAII = connPool;   
+    int res = mysql_ping(conRAII);
+    mysql_commit(conRAII);
+    if(res != 0){
+        mysql_close(conRAII);
+        poolRAII->reset(conRAII);
+    }           
 }
 connectionRAII::~connectionRAII(){
 	poolRAII->ReleaseConnection(conRAII);

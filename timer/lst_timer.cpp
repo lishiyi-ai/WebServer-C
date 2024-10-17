@@ -16,7 +16,7 @@ sort_timer_lst::~sort_timer_lst(){
 }
 
 void sort_timer_lst::add_timer(util_timer *timer){
-    cout << "1" << endl;
+    // cout << "1" << endl;
     if(!timer){
         return;
     }

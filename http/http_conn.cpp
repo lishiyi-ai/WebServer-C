@@ -228,6 +228,8 @@ http_conn::HTTP_CODE http_conn::parse_request_line(char *text){
     {
         m_method = POST;
         cgi = 1;
+    }else if(strcasecmp(method, "OPTIONS") == 0){
+        m_method = OPTIONS;
     }else
         return BAD_REQUEST;
     // 检索字符串 str1 中第一个不在字符串 str2 中出现的字符下标
@@ -287,7 +289,7 @@ http_conn::HTTP_CODE http_conn::parse_headers(char *text){
         text += strspn(text, " \t");
         m_host = text;
     }else{
-        LOG_INFO("oop!unknow header: %s", text);
+        LOG_INFO("unknow header: %s", text);
     }
 
     return NO_REQUEST;
@@ -295,6 +297,7 @@ http_conn::HTTP_CODE http_conn::parse_headers(char *text){
 // 判断http请求是否被完整读入
 http_conn::HTTP_CODE http_conn::parse_content(char *text){
     if (m_read_idx >= (m_content_length + m_checked_idx)){
+        m_data = text;
         text[m_content_length] = '\0';
         //POST请求中最后为输入的用户名和密码
         m_string = text;
@@ -350,11 +353,17 @@ http_conn::HTTP_CODE http_conn::do_request(){
     strcpy(m_real_file, doc_root);
     int len = strlen(doc_root);
     const char *p = strchr(m_url, '/');
-    // 处理cgi
-    if(cgi == 1 && (*(p + 1) == '2'|| *(p + 1) == '3')){
+    // 处理cgi 表示 post请求
+    if(cgi == 1){
+        if(strcasecmp(p, "register") == 0){
+            // 解析数据得到 username password
+        }else if(strcasecmp(p, "myedinfo") == 0){
+            // 修改个人信息
+        }else if(strcasecmp(p, "unregister") == 0){
+            // 注销账号
+        }
         // 根据标志判断是登陆检测还是注册检测
         char flag = m_url[1];
-
         char *m_url_real = (char *)malloc(sizeof(char) * 200);
         strcpy(m_url_real, "/");
         strcat(m_url_real, m_url + 2);
@@ -363,16 +372,16 @@ http_conn::HTTP_CODE http_conn::do_request(){
 
         //将用户名和密码提取出来
         //user=123&passwd=123
-        char name[100], password[100];
-        int i;
-        for (i = 5; m_string[i] != '&'; ++i)
-            name[i - 5] = m_string[i];
-        name[i - 5] = '\0';
+        char name[100] = "123", password[100] = "123";
+        // int i;
+        // for (i = 5; m_string[i] != '&'; ++i)
+        //     name[i - 5] = m_string[i];
+        // name[i - 5] = '\0';
 
-        int j = 0;
-        for (i = i + 10; m_string[i] != '\0'; ++i, ++j)
-            password[j] = m_string[i];
-        password[j] = '\0';
+        // int j = 0;
+        // for (i = i + 10; m_string[i] != '\0'; ++i, ++j)
+        //     password[j] = m_string[i];
+        // password[j] = '\0';
 
         if(*(p + 1) == '3'){
             //如果是注册，先检测数据库中是否有重名的
@@ -408,6 +417,12 @@ http_conn::HTTP_CODE http_conn::do_request(){
                 strcpy(m_url, "/welcome.html");
             else
                 strcpy(m_url, "/logError.html");
+        }
+    }else{
+        if(strcasecmp(p, "login") == 0){
+            // 获取username 和 password
+        }else if(strcasecmp(p, "")){
+
         }
     }
 
@@ -459,7 +474,12 @@ http_conn::HTTP_CODE http_conn::do_request(){
     // 实现文件磁盘地址和进程虚拟地址空间中一段虚拟地址的一一对映关系。
     // MAP_PRIVATE 对映射区域的写入操作会产生一个映射文件的复制，即私人的“写入时复制”（copy on write）对此区域作的任何修改都不会写回原来的文件内容。
     // PROT_READ 映射区域可被读取
-    m_file_address = (char *)mmap(0, m_file_stat.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    // m_file_address;
+    m_data = (char *)mmap(0, m_file_stat.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    m_data_len = m_file_stat.st_size;
+    m_data = (char *)malloc(sizeof(char) * 2048);
+    strcpy(m_data, "123456");
+    m_data_len = 6;
     close(fd);
     return FILE_REQUEST;
 }
@@ -510,6 +530,7 @@ bool http_conn::write(){
         }
 
         if(bytes_to_send <= 0){
+            free(m_data);
             unmap();
             modfd(m_epollfd, m_sockfd, EPOLLIN, m_TRIGMode);
 
@@ -546,7 +567,14 @@ bool http_conn::add_response(const char *format, ...){
     return true;
 }
 bool http_conn::add_status_line(int status, const char *title){
-    return add_response("%s %d %s\r\n", "HTTP/1.1", status, title);
+    add_response("%s %d %s\r\n", "HTTP/1.1", status, title);
+    add_cors_allow();
+    return 1;
+}
+/*预检请求*/
+bool http_conn::add_cors_allow(){
+    return 
+    add_response("%s\r\n", "Access-Control-Allow-Headers:*") && add_response("%s\r\n", "Access-Control-Allow-Origin:*");
 }
 bool http_conn::add_headers(int content_len){
     return add_content_length(content_len) && add_linger()
@@ -596,16 +624,17 @@ bool http_conn::process_write(HTTP_CODE ret){
         }
         case FILE_REQUEST:{
             add_status_line(200, ok_200_title);
-            if (m_file_stat.st_size != 0){
-                add_headers(m_file_stat.st_size);
+            LOG_INFO("data:%s", m_data);
+            if (m_data_len != 0){
+                add_headers(m_data_len);
                 //第一个iovec指针指向响应报文缓冲区，长度指向m_write_idx
                 m_iv[0].iov_base = m_write_buf;
                 m_iv[0].iov_len = m_write_idx;
                 //第二个iovec指针指向mmap返回的文件指针，长度指向文件大小
-                m_iv[1].iov_base = m_file_address;
-                m_iv[1].iov_len = m_file_stat.st_size;
+                m_iv[1].iov_base = m_data;
+                m_iv[1].iov_len = m_data_len;
                 m_iv_count = 2;
-                bytes_to_send = m_write_idx + m_file_stat.st_size;
+                bytes_to_send = m_write_idx + m_data_len;
                 return true;
             }else{
                 const char *ok_string = "<html><body></body></html>";
@@ -633,6 +662,7 @@ void http_conn::process(){
     }
     //调用process_write完成报文响应
     bool write_ret = process_write(read_ret);
+    LOG_INFO("data:%s", m_data);
     if (!write_ret)
     {
         close_conn();
