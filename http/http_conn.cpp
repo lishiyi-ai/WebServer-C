@@ -449,7 +449,6 @@ bool http_conn::write(){
         }
          
         while (1){
-            cout << m_write_buf[wraps_have_send] << endl;
             tmp = writev(m_sockfd, m_iv, m_iv_count);
             if (tmp < 0){
                 //判断缓冲区是否满了
@@ -629,6 +628,6 @@ void http_conn::process(){
         }
         if(flag) break;
     }
-    cout << wraps_to_send << " " << wraps_have_send << endl;
+
     modfd(m_epollfd, m_sockfd, EPOLLOUT, m_TRIGMode);
 }
