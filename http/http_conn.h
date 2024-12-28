@@ -31,6 +31,7 @@ public:
     static const int FILENAME_LEN = 200;
     static const int READ_BUFFER_SIZE = 2048;
     static const int WRITE_BUFFER_SIZE = 1024;
+    static const int WRITE_WRAP_SIZE = 100;
     //报文的请求方法，本项目只用到GET和POST
     enum METHOD{
         GET = 0,
@@ -118,19 +119,22 @@ private:
     int m_sockfd;
     sockaddr_in m_address;
     char m_read_buf[READ_BUFFER_SIZE];
+    long m_readed_len = 0;
     long m_read_idx;
     long m_checked_idx;
     int m_start_line;
-    char m_write_buf[WRITE_BUFFER_SIZE];
-    long m_write_idx;
+    long wraps_to_send;
+    long wraps_have_send;
+    char m_write_buf[WRITE_WRAP_SIZE][WRITE_BUFFER_SIZE];
+    long m_write_idx[WRITE_BUFFER_SIZE];
     CHECK_STATE m_check_state;
     METHOD m_method;
     char m_real_file[FILENAME_LEN];
     char *m_url;
     char *m_version;
     char *m_host;
-    char *m_data;
-    size_t m_data_len;
+    char *m_data[WRITE_WRAP_SIZE];
+    size_t m_data_len[WRITE_WRAP_SIZE];
     long m_content_length;
     bool m_linger;
     char *m_file_address;

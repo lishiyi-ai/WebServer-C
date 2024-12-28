@@ -1,5 +1,5 @@
 #include "http_conn.h"
-
+#include <stdlib.h>
 #include <mysql/mysql.h>
 #include <fstream>
 
@@ -93,7 +93,7 @@ int http_conn::m_epollfd = -1;
 // 关闭连接，关闭一个练级，客户总量减一
 void http_conn::close_conn(bool real_close){
     if(real_close && (m_sockfd != -1)){
-        printf("close %d\n", m_sockfd);
+        // printf("close %d\n", m_sockfd);
         removefd(m_epollfd, m_sockfd);
         m_sockfd = -1;
         m_user_count--;
@@ -130,6 +130,8 @@ void http_conn::init()
     mysql = NULL;
     bytes_to_send = 0;
     bytes_have_send = 0;
+    wraps_have_send = 0;
+    wraps_to_send = 0;
     m_check_state = CHECK_STATE_REQUESTLINE;
     m_linger = false;
     m_method = GET;
@@ -140,14 +142,14 @@ void http_conn::init()
     m_start_line = 0;
     m_checked_idx = 0;
     m_read_idx = 0;
-    m_write_idx = 0;
+    // m_write_idx = 0;
     cgi = 0;
     m_state = 0;
     timer_flag = 0;
     improv = 0;
 
     memset(m_read_buf, '\0', READ_BUFFER_SIZE);
-    memset(m_write_buf, '\0', WRITE_BUFFER_SIZE);
+    // memset(m_write_buf, '\0', WRITE_BUFFER_SIZE);
     memset(m_real_file, '\0', FILENAME_LEN);
 }
 
@@ -297,10 +299,12 @@ http_conn::HTTP_CODE http_conn::parse_headers(char *text){
 // 判断http请求是否被完整读入
 http_conn::HTTP_CODE http_conn::parse_content(char *text){
     if (m_read_idx >= (m_content_length + m_checked_idx)){
-        m_data = text;
+        m_data[wraps_to_send] = text;
         text[m_content_length] = '\0';
         //POST请求中最后为输入的用户名和密码
         m_string = text;
+        /*修改*/
+        m_checked_idx += m_content_length;
         return GET_REQUEST;
     }
     return NO_REQUEST;
@@ -339,7 +343,6 @@ http_conn::HTTP_CODE http_conn::process_read(){
                 if (ret == GET_REQUEST)
                     // 开始具体处理
                     return do_request();
-                line_status = LINE_OPEN;
                 break;
             }
         default:
@@ -352,79 +355,8 @@ http_conn::HTTP_CODE http_conn::process_read(){
 http_conn::HTTP_CODE http_conn::do_request(){
     strcpy(m_real_file, doc_root);
     int len = strlen(doc_root);
+    // 查找第一次出现位置
     const char *p = strchr(m_url, '/');
-    // 处理cgi 表示 post请求
-    if(cgi == 1){
-        if(strcasecmp(p, "register") == 0){
-            // 解析数据得到 username password
-        }else if(strcasecmp(p, "myedinfo") == 0){
-            // 修改个人信息
-        }else if(strcasecmp(p, "unregister") == 0){
-            // 注销账号
-        }
-        // 根据标志判断是登陆检测还是注册检测
-        char flag = m_url[1];
-        char *m_url_real = (char *)malloc(sizeof(char) * 200);
-        strcpy(m_url_real, "/");
-        strcat(m_url_real, m_url + 2);
-        strncpy(m_real_file + len, m_url_real, FILENAME_LEN - len - 1);
-        free(m_url_real);
-
-        //将用户名和密码提取出来
-        //user=123&passwd=123
-        char name[100] = "123", password[100] = "123";
-        // int i;
-        // for (i = 5; m_string[i] != '&'; ++i)
-        //     name[i - 5] = m_string[i];
-        // name[i - 5] = '\0';
-
-        // int j = 0;
-        // for (i = i + 10; m_string[i] != '\0'; ++i, ++j)
-        //     password[j] = m_string[i];
-        // password[j] = '\0';
-
-        if(*(p + 1) == '3'){
-            //如果是注册，先检测数据库中是否有重名的
-            //没有重名的，进行增加数据
-            char *sql_insert = (char *)malloc(sizeof(char) * 200);
-            strcpy(sql_insert, "INSERT INTO user(username, passwd) VALUES(");
-            strcat(sql_insert, "'");
-            strcat(sql_insert, name);
-            strcat(sql_insert, "', '");
-            strcat(sql_insert, password);
-            strcat(sql_insert, "')");
-
-            if (users.find(name) == users.end())
-            {
-                m_lock.lock();
-                int res = mysql_query(mysql, sql_insert);
-                users.insert(pair<string, string>(name, password));
-                m_lock.unlock();
-
-                if (!res)
-                    strcpy(m_url, "/log.html");
-                else
-                    strcpy(m_url, "/registerError.html");
-            }
-            else
-                strcpy(m_url, "/registerError.html");
-        }
-        //如果是登录，直接判断
-        //若浏览器端输入的用户名和密码在表中可以查找到，返回1，否则返回0
-        else if (*(p + 1) == '2')
-        {
-            if (users.find(name) != users.end() && users[name] == password)
-                strcpy(m_url, "/welcome.html");
-            else
-                strcpy(m_url, "/logError.html");
-        }
-    }else{
-        if(strcasecmp(p, "login") == 0){
-            // 获取username 和 password
-        }else if(strcasecmp(p, "")){
-
-        }
-    }
 
     if(*(p + 1) == '0'){
         char *m_url_real = (char *)malloc(sizeof(char) * 200);
@@ -458,6 +390,7 @@ http_conn::HTTP_CODE http_conn::do_request(){
         free(m_url_real);
     }else
         strncpy(m_real_file + len, m_url, FILENAME_LEN - len - 1);
+    /*
     // 通过stat获取请求资源文件信息，成功则将信息更新到m_file_stat结构体
     // 失败返回NO_RESOURCE状态，表示资源不存在
     if (stat(m_real_file, &m_file_stat) < 0)
@@ -469,17 +402,20 @@ http_conn::HTTP_CODE http_conn::do_request(){
     if (S_ISDIR(m_file_stat.st_mode))
         return BAD_REQUEST;
     // 以只读方式获取文件描述符，通过mmap将该文件映射到内存中
+    */
     int fd = open(m_real_file, O_RDONLY);
+    
+
     // mmap是一种内存映射文件的方法，即将一个文件或者其它对象映射到进程的地址空间，
     // 实现文件磁盘地址和进程虚拟地址空间中一段虚拟地址的一一对映关系。
     // MAP_PRIVATE 对映射区域的写入操作会产生一个映射文件的复制，即私人的“写入时复制”（copy on write）对此区域作的任何修改都不会写回原来的文件内容。
     // PROT_READ 映射区域可被读取
     // m_file_address;
-    m_data = (char *)mmap(0, m_file_stat.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-    m_data_len = m_file_stat.st_size;
-    m_data = (char *)malloc(sizeof(char) * 2048);
-    strcpy(m_data, "123456");
-    m_data_len = 6;
+    m_data[wraps_to_send] = (char *)mmap(0, m_file_stat.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    m_data_len[wraps_to_send] = m_file_stat.st_size;
+    m_data[wraps_to_send] = (char *)malloc(sizeof(char) * 2048);
+    strcpy(m_data[wraps_to_send], "123456");
+    m_data_len[wraps_to_send] = 6;
     close(fd);
     return FILE_REQUEST;
 }
@@ -494,72 +430,94 @@ void http_conn::unmap()
 }
 bool http_conn::write(){
     int tmp = 0;
-
-    if (bytes_to_send == 0)
-    {
-        modfd(m_epollfd, m_sockfd, EPOLLIN, m_TRIGMode);
-        init();
-        return true;
-    }
-    while (1){
-        tmp = writev(m_sockfd, m_iv, m_iv_count);
-
-        if (tmp < 0){
-            //判断缓冲区是否满了
-            if (errno == EAGAIN){
-                modfd(m_epollfd, m_sockfd, EPOLLOUT, m_TRIGMode);
-                return true;
-            }
-            unmap();
-            return false;
+    while(wraps_have_send < wraps_to_send){
+        //第一个iovec指针指向响应报文缓冲区，长度指向m_write_idx
+        bytes_to_send = m_write_idx[wraps_have_send];
+        m_iv[0].iov_base = m_write_buf[wraps_have_send];
+        m_iv[0].iov_len = m_write_idx[wraps_have_send];
+        if(m_iv_count == 2){
+        //第二个iovec指针指向mmap返回的文件指针，长度指向文件大小
+            m_iv[1].iov_base = m_data[wraps_have_send];
+            m_iv[1].iov_len = m_data_len[wraps_have_send];
+            bytes_to_send += m_data_len[wraps_have_send];
         }
-
-        bytes_have_send += tmp;
-        bytes_to_send -= tmp;
-
-        // m_write_buf 存放头部内容
-        // m_file_address 存放文件内的内容
-
-        if(bytes_have_send >= m_iv[0].iov_len){
-            m_iv[0].iov_len = 0;
-            m_iv[1].iov_base = m_file_address + (bytes_have_send - m_write_idx);
-            m_iv[1].iov_len = bytes_to_send;          
-        }else{
-            m_iv[0].iov_base = m_write_buf + bytes_have_send;
-            m_iv[1].iov_len -= bytes_have_send;
-        }
-
-        if(bytes_to_send <= 0){
-            free(m_data);
-            unmap();
+        if (bytes_to_send == 0)
+        {
             modfd(m_epollfd, m_sockfd, EPOLLIN, m_TRIGMode);
-
-            if (m_linger){
-                init();
-                return true;
-            }else{
+            init();
+            return true;
+        }
+         
+        while (1){
+            cout << m_write_buf[wraps_have_send] << endl;
+            tmp = writev(m_sockfd, m_iv, m_iv_count);
+            if (tmp < 0){
+                //判断缓冲区是否满了
+                if (errno == EAGAIN){
+                    LOG_INFO("EAGAIN");
+                    modfd(m_epollfd, m_sockfd, EPOLLOUT, m_TRIGMode);
+                    return true;
+                }
+                unmap();
                 return false;
             }
-        }
 
+            bytes_have_send += tmp;
+            bytes_to_send -= tmp;
+
+            // m_write_buf 存放头部内容
+            // m_file_address 存放文件内的内容
+
+            if(bytes_have_send >= m_iv[0].iov_len){
+                m_iv[0].iov_len = 0;
+                m_iv[1].iov_base = m_file_address + (bytes_have_send - m_write_idx[wraps_have_send]);
+                m_iv[1].iov_len = bytes_to_send;          
+            }else{
+                m_iv[0].iov_base = m_write_buf + bytes_have_send;
+                m_iv[1].iov_len -= bytes_have_send;
+            }
+
+            if(bytes_to_send <= 0 ){
+                // 清除当前写报文
+                free(m_data[wraps_have_send]);
+                m_write_idx[wraps_have_send] = 0;
+                memset(m_write_buf[wraps_have_send], '\0', WRITE_BUFFER_SIZE);
+                unmap();
+
+                wraps_have_send++;
+                if(wraps_to_send > wraps_have_send){
+                    break;
+                }
+                modfd(m_epollfd, m_sockfd, EPOLLIN, m_TRIGMode);
+
+                if (m_linger){
+                    init();
+                    return true;
+                }else{
+                    return false;
+                }
+            }
+
+        }
     }
+    return true;
 }
 bool http_conn::add_response(const char *format, ...){
-    if (m_write_idx >= WRITE_BUFFER_SIZE)
+    if (m_write_idx[wraps_to_send] >= WRITE_BUFFER_SIZE)
         return false;
     //定义可变参数列表
     va_list arg_list;
     //将变量arg_list初始化为传入参数
     va_start(arg_list, format);
     //将数据format从可变参数列表写入缓冲区写，返回写入数据的长度
-    int len = vsnprintf(m_write_buf + m_write_idx, 
-    WRITE_BUFFER_SIZE - 1 - m_write_idx, format, arg_list);
+    int len = vsnprintf(m_write_buf[wraps_to_send] + m_write_idx[wraps_to_send], 
+    WRITE_BUFFER_SIZE - 1 - m_write_idx[wraps_to_send], format, arg_list);
     //如果写入的数据长度超过缓冲区剩余空间，则报错
-    if(len >= (WRITE_BUFFER_SIZE - 1 - m_write_idx)){
+    if(len >= (WRITE_BUFFER_SIZE - 1 - m_write_idx[wraps_to_send])){
         va_end(arg_list);
         return false;
     }
-    m_write_idx += len;
+    m_write_idx[wraps_to_send] += len;
     //清空可变参列表
     va_end(arg_list);
 
@@ -626,15 +584,9 @@ bool http_conn::process_write(HTTP_CODE ret){
             add_status_line(200, ok_200_title);
             LOG_INFO("data:%s", m_data);
             if (m_data_len != 0){
-                add_headers(m_data_len);
-                //第一个iovec指针指向响应报文缓冲区，长度指向m_write_idx
-                m_iv[0].iov_base = m_write_buf;
-                m_iv[0].iov_len = m_write_idx;
-                //第二个iovec指针指向mmap返回的文件指针，长度指向文件大小
-                m_iv[1].iov_base = m_data;
-                m_iv[1].iov_len = m_data_len;
+                add_headers(m_data_len[wraps_to_send]);
                 m_iv_count = 2;
-                bytes_to_send = m_write_idx + m_data_len;
+                wraps_to_send ++;
                 return true;
             }else{
                 const char *ok_string = "<html><body></body></html>";
@@ -642,30 +594,41 @@ bool http_conn::process_write(HTTP_CODE ret){
                 if (!add_content(ok_string))
                     return false;
             }
+            return false;
+        }
+        case NO_REQUEST:{
+            return true;
         }
         default:
             return false;
     }
-    //除FILE_REQUEST状态外，其余状态只申请一个iovec，指向响应报文缓冲区
-    m_iv[0].iov_base = m_write_buf;
-    m_iv[0].iov_len = m_write_idx;
-    m_iv_count = 1;
-    bytes_to_send = m_write_idx;
+    m_iv_count = 2;
+    wraps_to_send ++;
     return true;
 }
 void http_conn::process(){
-    HTTP_CODE read_ret = process_read();
-    //NO_REQUEST，表示请求不完整，需要继续接收请求数据
-    if(read_ret == NO_REQUEST){
-        modfd(m_epollfd, m_sockfd, EPOLLIN, m_TRIGMode);
-        return;
+    int i = 0;
+    while(m_read_idx > m_checked_idx){
+        m_readed_len = m_checked_idx;
+        HTTP_CODE read_ret = process_read();
+        //NO_REQUEST，表示请求不完整，需要继续接收请求数据
+        int flag = 0;
+        if(read_ret == NO_REQUEST){
+            strncpy(m_read_buf, m_read_buf + m_readed_len, m_read_idx - m_readed_len);
+            m_read_buf[m_read_idx - m_readed_len] = '\0';
+            m_checked_idx = 0;
+            m_read_idx = m_read_idx - m_readed_len;
+            flag = 1;
+        }
+
+        //调用process_write完成报文响应
+        bool write_ret = process_write(read_ret);
+        if (!write_ret)
+        {
+            close_conn();
+        }
+        if(flag) break;
     }
-    //调用process_write完成报文响应
-    bool write_ret = process_write(read_ret);
-    LOG_INFO("data:%s", m_data);
-    if (!write_ret)
-    {
-        close_conn();
-    }
+    cout << wraps_to_send << " " << wraps_have_send << endl;
     modfd(m_epollfd, m_sockfd, EPOLLOUT, m_TRIGMode);
 }

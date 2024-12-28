@@ -131,13 +131,13 @@ void WebServer::eventListen(){
     ret = bind(m_listenfd, (struct sockaddr *)&address, sizeof(address));
     assert(ret >= 0);
     // 第二个参数backlog为建立好连接处于ESTABLISHED状态的队列的长度
-    ret = listen(m_listenfd, 5);
+    ret = listen(m_listenfd, 10);
     assert(ret >= 0);
     utils.init(TIMESLOT);
 
     //epoll创建内核事件表
     epoll_event events[MAX_EVENT_NUMBER];
-    m_epollfd = epoll_create(5);
+    m_epollfd = epoll_create(10);
     assert(m_epollfd != 1);
     utils.addfd(m_epollfd, m_listenfd, false, 
     m_LISTENTrigmode);
