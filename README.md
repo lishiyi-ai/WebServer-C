@@ -24,21 +24,6 @@ webserver类中支持react模式 和 proactor模式
   -FireFox
   -Chrome
   -Edge
--数据库
-~~~
-// 建立webuserdb库
-create database webuserdb;
-
-// 创建user表
-USE yourdb;
-CREATE TABLE user(
-    username char(50) NULL,
-    passwd char(50) NULL
-)ENGINE=InnoDB;
-
-// 添加数据
-INSERT INTO user(username, passwd) VALUES('name', 'passwd');
-~~~
 
 * -p，自定义端口号
   * 默认9000
@@ -63,5 +48,3 @@ INSERT INTO user(username, passwd) VALUES('name', 'passwd');
 * -a，选择反应堆模型，默认Proactor
   * 0，Proactor模型
   * 1，Reactor模型
- 
-参考项目地址：https://github.com/qinguoyi/TinyWebServer
